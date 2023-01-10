@@ -1,0 +1,925 @@
+openapi: 3.1.0
+info:
+  version: 1.0.0
+  title: Anrok API
+  termsOfService: https://www.anrok.com/privacy-terms
+  contact:
+    email: support@anrok.com
+    url: https://help-center.anrok.com/hc/en-us/requests/new
+  license:
+    name: TODO!!
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  x-logo:
+    url: https://theme.zdassets.com/theme_assets/10849361/0cd1c7945d3fefa1b197ebdc630b5ea13eb072f8.png
+  description: |
+    # API reference
+
+    The Anrok API server is accessible at “https://api.anrok.com”.
+
+    All requests are HTTP POSTs with JSON in the body.
+
+    Authentication is via an HTTP header “Authorization: Bearer {sellerId}/{apiKeyId}/secret.{apiKeySecret}”.
+tags:
+  - name: Customer certificates
+    description: Customer exemption certificates
+  - name: Transactions
+    description: |-
+      This documentation describes how to use Anrok's Transactions API to synchronize transactions between Anrok and your billing system, as well as to calculate sales tax for new invoices. Use of this API is generally recommended for sellers with customer billing systems or workflows that prevent you from using one of our pre-built platform integrations. Sellers utilizing Stripe Subscriptions or Checkout may also use this API to calculate and add tax on initial invoices, while continuing to use Anrok's Stripe integration to manage tax for subsequent billing cycles.
+
+      # Invoice lifecycle
+      1. When an invoice is created: the billing system should call the Anrok createEphemeral endpoint to calculate the sales tax amount.
+      1. When an invoice is updated: same as above.
+      1. When an invoice is finalized and ready to send to the customer: the billing system should call the Anrok createOrUpdate endpoint so that the transaction is recorded in Anrok.
+      1. When an invoice is paid: Anrok does not need to be notified. Sellers are required to remit sales tax to a state upon invoice, not receipt of payment.
+      While the above covers a standard invoice lifecycle, the Transactions API also includes endpoints for exceptional states like voiding and refunding invoices, which are described below.
+  - name: Product mappings
+    description: Distinct from Anrok's Transaction API, these endpoints enable you to manage your Product IDs in Anrok via API. You may use these endpoints to supplement your core integration, whether that's through our Transaction API or one of our partner integrations. This API is designed to support you in dynamically mapping new Products and viewing a comprehensive list of existing mappings. Because we aim to keep your product list in Anrok minimal and focused on truly distinct offerings, we use mappings to associate various products in your billing system with the equivalent products in Anrok. This API enables you to confirm that each product on any transaction seen by Anrok is mapped to a defined product and will be assessed properly for taxability calculations as a result.
+servers:
+  - url: https://api.anrok.com
+  - url: https://{tenant}/api/v1
+    variables:
+      tenant:
+        default: www
+        description: Your tenant id
+  - url: https://example.com/api/v1
+paths:
+  /v1/seller/certificates/create:
+    post:
+      tags:
+        - Customer certificates
+      summary: Create customer certificate
+      description: This endpoint is used to create a new customer certificate in Anrok.
+      operationId: certificatesCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCertificate'
+            example:
+              customerId: cus_123
+              customerName: Acme Inc
+              effectiveDateBegin: '2022-01-01'
+              exemptionNumber: cert-100
+              certificateFile:
+                name: cert.png
+                contentsBase64: Y2VydC5wbmc=
+              jurises:
+                - jurisId: us-MA
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Certificate ID
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: string
+              examples:
+                missingRequiredProperty:
+                  value: 'Request body: "customerId": Required.'
+                  summary: Missing required property
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - duplicateJurisIds
+                      - fileBadFormat
+                      - customerIdNotFound
+              example:
+                type: fileBadFormat
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken="sxxx/saxxx/secret.xxx"
+            certName="cert.png"
+            certContentsBase64=$(base64 -i "$certName")
+
+            curl -X POST https://api.anrok.com/v1/seller/certificates/create \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d "{
+                \"customerId\": \"customer-id-0\",
+                \"effectiveDateBegin\": \"2022-12-13\",
+                \"exemptionNumber\": \"cert-100\",
+                \"certificateFile\": {
+                    \"name\": \"$certName\",
+                    \"contentsBase64\": \"$certContentsBase64\"
+                },
+                \"jurises\": [{
+                    \"jurisId\": \"us-MA\"
+                }]
+              }"
+  /v1/seller/certificates/id:{certificateId}/archive:
+    post:
+      tags:
+        - Customer certificates
+      summary: Archive customer certificate
+      description: This endpoint is used to archive/invalidate a customer certificate.
+      operationId: certificatesArchive
+      requestBody:
+        $ref: '#/components/requestBodies/empty'
+      responses:
+        '200':
+          $ref: '#/components/responses/EmptyResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - certificateIdNotFound
+              example:
+                type: certificateIdNotFound
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken="sxxx/saxxx/secret.xxx"
+            certificateId="ctec6vx7gtrmxq"
+
+            curl -X POST "https://api.anrok.com/v1/seller/certificates/id:$certificateId/archive" \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d "{}"
+    parameters:
+      - $ref: '#/components/parameters/CertificateId'
+  /v1/seller/transactions/createOrUpdate:
+    post:
+      tags:
+        - Transactions
+      summary: Create or update transaction
+      description: Given the details of an invoice, calculate sales tax and save it as a “transaction” in Anrok. Saved transactions are used by Anrok to file sales tax returns and monitor sales thresholds.
+      operationId: transactionsCreateOrUpdate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateTransaction'
+            example:
+              id: stripe:in_1JSW342eZvKYlo2C
+              currencyCode: USD
+              accountingTime: '2022-01-02T03:30:00Z'
+              accountingTimeZone: UTC
+              lineItems:
+                - id: item-1
+                  productExternalId: saas-product
+                  amount: 15000
+              customerAddress:
+                country: us
+                line1: 310 S Houston St
+                city: Dallas
+                state: TX
+                zipCode: '75202'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOrUpdateTransactionSuccess'
+              example:
+                version: 1
+                taxAmountToCollect: 750
+                lineItems:
+                  - taxAmountToCollect: 250
+                  - taxAmountToCollect: 500
+        '400':
+          $ref: '#/components/responses/CreateTransactionBadRequest'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CreateTransactionCannotComputeTaxAmount'
+                  - $ref: '#/components/schemas/CreateTransactionCannotUpdate'
+              examples:
+                taxDateTooFarInFuture:
+                  value:
+                    type: taxDateTooFarInFuture
+                  summary: Since tax rates are subject to change, we don't allow future tax dates.
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken='sxxx/saxxx/secret.xxx'
+
+            curl -X POST https://api.anrok.com/v1/seller/transactions/createOrUpdate \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d '{
+                "id": "stripe:in_1JSW342eZvKYlo2C",
+                "currencyCode": "USD",
+                "accountingTime": "2022-01-02T03:30:00Z",
+                "accountingTimeZone": "UTC",
+                "lineItems": [{
+                  "id": "item-1",
+                  "productExternalId": "saas-product",
+                  "amount": 15000
+                }],
+                "customerAddress": {
+                  "country": "us",
+                  "line1": "310 S Houston St",
+                  "city": "Dallas",
+                  "state": "TX",
+                  "zipCode": "75202"
+                }
+              }'
+  /v1/seller/transactions/createEphemeral:
+    post:
+      tags:
+        - Transactions
+      summary: Create ephemeral transaction
+      description: Given the details of an invoice, calculate sales tax without saving the transaction in Anrok. Ephemeral transactions are not used by Anrok to file sales tax returns or monitor sales thresholds.
+      operationId: transactionsCreateEphemeral
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEphemeralTransaction'
+            example:
+              currencyCode: USD
+              accountingTime: '2022-01-02T03:30:00Z'
+              accountingTimeZone: UTC
+              lineItems:
+                - id: item-1
+                  productExternalId: saas-product
+                  amount: 15000
+              customerAddress:
+                country: us
+                line1: 310 S Houston St
+                city: Dallas
+                state: TX
+                zipCode: '75202'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEphemeralTransactionSuccess'
+              example:
+                taxAmountToCollect: 750
+                lineItems:
+                  - taxAmountToCollect: 250
+                  - taxAmountToCollect: 500
+        '400':
+          $ref: '#/components/responses/CreateTransactionBadRequest'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTransactionCannotComputeTaxAmount'
+      x-codeSamples:
+        - lang: cURL
+          source: |-
+            apiToken='sxxx/saxxx/secret.xxx'
+
+            curl -X POST https://api.anrok.com/v1/seller/transactions/createEphemeral \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d '{
+                "currencyCode": "USD",
+                "accountingTime": "2022-01-02T03:30:00Z",
+                "accountingTimeZone": "UTC",
+                "lineItems": [{
+                  "id": "item-1",
+                  "productExternalId": "saas-product",
+                  "amount": 15000
+                }],
+                "customerAddress": {
+                  "country": "us",
+                  "line1": "310 S Houston St",
+                  "city": "Dallas",
+                  "state": "TX",
+                  "zipCode": "75202"
+                }
+              }'
+  /v1/seller/transactions/createRefund:
+    post:
+      tags:
+        - Transactions
+      summary: Create refund
+      description: Creates a new transaction that is the exact inverse of the given transaction. The sale prices and tax amounts will add up to zero.
+      operationId: transactionsCreateRefund
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                originalTransactionId:
+                  description: The ID of the transaction you want to create a refund of
+                  type: string
+                newTransactionId:
+                  description: The ID for the new transaction
+                  type: string
+                originalTransactionExpectedVersion:
+                  description: The expected transaction version. The refund will fail if this is not the latest version of the transaction.
+                  type: integer
+                  format: int32
+              required:
+                - originalTransactionId
+                - newTransactionId
+            example:
+              originalTransactionId: stripe:in_1JSW342eZvKYlo2C
+              newTransactionId: stripe:in_1JSW342eZvKYlo2C_refund
+        required: true
+      responses:
+        '200':
+          $ref: '#/components/responses/EmptyResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: string
+              examples:
+                missingRequestProperty:
+                  summary: Required property missing
+                  value: 'Request body: "newTransactionId": Required.'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - transactionIdNotFound
+                      - transactionExpectedVersionMismatch
+                      - transactionIsAlreadyANegation
+                      - duplicateTransactionId
+              example:
+                type: transactionExpectedVersionMismatch
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken='sxxx/saxxx/secret.xxx'
+
+            curl -X POST https://api.anrok.com/v1/seller/transactions/createRefund \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d '{
+                "originalTransactionId": "stripe:in_1JSW342eZvKYlo2C",
+                "newTransactionId": "stripe:in_1JSW342eZvKYlo2C_refund"
+              }'
+  /v1/seller/transactions/id:{transactionId}/void:
+    post:
+      tags:
+        - Transactions
+      summary: Void transaction
+      description: Mark a previously-created transaction as “void”. It will no longer be included in returns or sales totals.
+      operationId: transactionsVoid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transactionExpectedVersion:
+                  description: The expected transaction version. The void will fail if this is not the latest version of the transaction.
+                  type: integer
+                  format: int32
+            examples:
+              emptyExample:
+                value: {}
+                summary: Empty request body
+              expectVersion:
+                value:
+                  transactionExpectedVersion: 1
+                summary: Expected transaction version
+        required: true
+      responses:
+        '200':
+          $ref: '#/components/responses/EmptyResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - transactionIdNotFound
+                      - transactionExpectedVersionMismatch
+                      - transactionFrozenForFiling
+              example:
+                type: transactionIdNotFound
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken='sxxx/saxxx/secret.xxx'
+
+            curl -X POST https://api.anrok.com/v1/seller/transactions/id:stripe:in_1JSW342eZvKYlo2C/void \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d '{}'
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+  /v1/seller/integrations/id:{integrationId}/productIdMapping/list:
+    post:
+      tags:
+        - Product mappings
+      summary: List product mappings
+      description: Lists all Product ID mappings for this integration.
+      operationId: productIdMappingsList
+      requestBody:
+        $ref: '#/components/requestBodies/empty'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties:
+                    type: string
+              example:
+                - billing_system_id_1: anrok_id_1
+                - billing_system_id_2: anrok_id_2
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - integrationIdNotFound
+              example:
+                type: integrationIdNotFound
+    parameters:
+      - $ref: '#/components/parameters/IntegrationId'
+  /v1/seller/integrations/id:{integrationId}/productIdMapping/add:
+    post:
+      tags:
+        - Product mappings
+      summary: Add product mapping
+      description: Adds a Product ID mapping for this integration.
+      operationId: productIdMappingsAdd
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sourceId:
+                  description: Source Product ID from billing system.
+                  type: string
+                targetId:
+                  description: Target Product ID on Anrok. This product must already exist in Anrok.
+                  type: string
+                shouldOverwrite:
+                  description: Whether this request should override an existing Source ID mapping
+                  type: boolean
+                  default: false
+              required:
+                - sourceId
+                - targetId
+            example:
+              sourceId: billing system ID
+              targetId: anrok ID
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - integrationIdNotFound
+                      - sourceIdAlreadyMapped
+                      - targetIdNotFound
+              example:
+                type: targetIdNotFound
+    parameters:
+      - $ref: '#/components/parameters/IntegrationId'
+components:
+  securitySchemes:
+    http:
+      type: http
+      description: The Anrok API uses API keys to authenticate requests. You can view and manage your API keys in the Anrok app under Settings >> Developers >> Manage API keys. Use an Authorization header in the format `Bearer {sellerId}/{apiKeyId}/secret.{apiSecret}` to authenticate Anrok API requests.
+      scheme: Bearer
+  schemas:
+    CustomerName:
+      description: The name of the customer
+      type: string
+      examples:
+        - Acme Inc
+    CustomerCertificateFile:
+      type: object
+      properties:
+        name:
+          description: File name
+          type: string
+          examples:
+            - cert.png
+        contentsBase64:
+          description: Base64 encoded certificate image contents
+          type: string
+          examples:
+            - Y2VydC5wbmc=
+      required:
+        - name
+        - contentsBase64
+    CustomerCertificateJuris:
+      type: object
+      properties:
+        jurisId:
+          description: ID of jurisdiction
+          type: string
+          examples:
+            - us-MA
+        registrationId:
+          description: Registration ID for jurisdiction
+          type: string
+          examples:
+            - reg-1234
+        effectiveDateEndi:
+          description: Expiration date of certificate in this jurisdiction
+          type: string
+          format: date
+          examples:
+            - '2023-01-01'
+        notes:
+          description: Optional internal notes
+          type: string
+          examples:
+            - Optional internal notes
+      required:
+        - jurisId
+    CustomerCertificate:
+      type: object
+      properties:
+        customerId:
+          description: The Anrok ID of the customer
+          type: string
+          examples:
+            - cus_123
+        customerName:
+          $ref: '#/components/schemas/CustomerName'
+        effectiveDateBegin:
+          description: Effective date of certificate
+          type: string
+          format: date-time
+          examples:
+            - '2022-01-01'
+        exemptionNumber:
+          description: Certificate exemption number
+          type: string
+          examples:
+            - cert-105
+        notes:
+          description: Optional internal notes
+          type: string
+          examples:
+            - customer notes
+        certificateFile:
+          $ref: '#/components/schemas/CustomerCertificateFile'
+        jurises:
+          description: Jurisdictions for which certificate applies
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerCertificateJuris'
+      required:
+        - customerId
+        - effectiveDateBegin
+        - certificateFile
+        - jurises
+    TransactionLineItem:
+      type: object
+      properties:
+        id:
+          description: Identifier for the line item. Is saved by Anrok, but not used for anything by Anrok.
+          type: string
+        productExternalId:
+          description: A product ID that has already been defined in the Anrok UI (under "Product IDs"). This is used to determine whether the line item is taxable.
+          type: string
+        amount:
+          description: The sale price in the smallest denomination of the currency (e.g. cents or pennies)
+          type: integer
+          minimum: -100000000000
+          maximum: 100000000000
+      required:
+        - productExternalId
+        - amount
+    CustomerNonUsAddress:
+      type: object
+      description: The non-US address where the product will be delivered or used, which is what determines the taxing jurisdictions and rates. For SaaS companies, this is typically the billing address. All address fields are optional, but Anrok will return an error if the address does not have enough information to determine the country with high confidence. International is a premium feature. Please contact support@anrok.com for more information.
+      properties:
+        country:
+          description: The country's full name or 2-letter ISO code
+          type: string
+          examples:
+            - UK
+            - United Kingdom
+        line1:
+          description: The "delivery line" of the address
+          type: string
+        city:
+          description: City or town name
+          type: string
+        region:
+          description: Other principal subdivision (i.e. province, state, county)
+          type: string
+        postalCode:
+          description: Postal code
+          type: string
+      required: []
+      examples:
+        - country: ENGLAND
+          line1: 2045 ROYAL ROAD
+          city: LONDON
+          postalCode: WIP 6HQ
+        - country: AU
+          line1: 71 Gaggin Street
+          city: Heddon Greta
+          region: New South Wales
+          postalCode: '2321'
+    CustomerUsAddress:
+      type: object
+      description: The US address where the product will be delivered or used, which is what determines the taxing jurisdictions and rates. For SaaS companies, this is typically the billing address. Address fields besides country are optional, but Anrok will return an error if the address does not have enough information to determine the top-level taxing jurisdiction.
+      properties:
+        country:
+          type: string
+          enum:
+            - us
+        line1:
+          description: The "delivery line" of the address
+          type: string
+        city:
+          description: The standard USPS format
+          type: string
+        state:
+          description: The standard USPS format
+          type: string
+        zipCode:
+          description: The standard USPS format
+          type: string
+      required:
+        - country
+      example:
+        country: us
+        line1: 123 Main St
+        city: White Plains
+        state: NY
+        zipCode: '10601'
+    CustomerTaxId:
+      oneOf:
+        - type: object
+          description: VAT registration number for a European Union member state
+          properties:
+            type:
+              type: string
+              enum:
+                - euVrn
+            value:
+              description: VAT registration number for EU member state
+              type: string
+          required:
+            - type
+            - value
+        - type: object
+          description: Customer tax ID for any non-US, non-EU country
+          properties:
+            type:
+              type: string
+              enum:
+                - genericVatNumber
+            value:
+              description: Tax identification number
+              type: string
+          required:
+            - type
+            - value
+    CreateEphemeralTransaction:
+      type: object
+      properties:
+        lineItems:
+          description: The line items in the transaction.
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionLineItem'
+        currencyCode:
+          description: Three letter ISO currency code, in upper case.
+          type: string
+          examples:
+            - USD
+            - GBP
+            - EUR
+        customerAddress:
+          oneOf:
+            - $ref: '#/components/schemas/CustomerNonUsAddress'
+            - $ref: '#/components/schemas/CustomerUsAddress'
+        customerId:
+          description: |
+            The Anrok customer ID used to link transactions for the same customer and to look up tax exemption certificates for a customer. This is typically the billing system's customer ID with a prefix to disambiguate.
+            - If customerId is provided without customerName, that customer object must already exist in Anrok.
+            - If both customerId and customerName are provided, the customer object will be created if it is not already present.
+            - Customer IDs are unique across the entire seller account.
+          type: string
+          examples:
+            - v1:1292
+            - stripe:cus_K39sWBu92Lo
+        customerName:
+          $ref: '#/components/schemas/CustomerName'
+        customerTaxIds:
+          description: Tax IDs for the customer receiving the product
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerTaxId'
+        accountingDate:
+          description: The date that this transaction occurred, for accounting purposes. Accounting date will typically correspond to the invoice date. This is used to determine which tax return the transaction belongs to.
+          type: string
+          format: date
+          example: '2017-07-21'
+        accountingTime:
+          description: The time that this transaction occurred, for accounting purposes. If accountingDate is not provided, accountingTime is required to compute an accounting date for the transaction.
+          type: string
+          format: date-time
+          example: '2017-07-21T17:32:28Z'
+        accountingTimeZone:
+          description: A “tz database” string used to compute an accounting date from the request's accountingTime. The request cannot provide both an accountingDate and an accountingTimeZone. If accountingTime is provided without specifying an accountingTimeZone, the time zone configured on the seller account will be used.
+          type: string
+          enum:
+            - UTC
+            - America/New_York
+            - America/Chicago
+            - America/Denver
+            - America/Los_Angeles
+            - America/Anchorage
+            - Pacific/Honolulu
+        taxDate:
+          description: The date to use for tax calculations. If omitted, Anrok will use the the minimum of the accounting date and two days in the future.
+          type: string
+          format: date
+          example: '2017-07-21'
+      required:
+        - lineItems
+        - currencyCode
+    CreateOrUpdateTransaction:
+      allOf:
+        - $ref: '#/components/schemas/CreateEphemeralTransaction'
+        - type: object
+          properties:
+            id:
+              description: The ID of the new transaction. This must be unique across the entire seller account. This is typically the billing system's invoice ID with some prefix to disambiguate different systems.
+              type: string
+              examples:
+                - v1:2706174
+                - stripe:in_1JSW342eZvKYlo2C
+          required:
+            - id
+    CreateEphemeralTransactionSuccess:
+      type: object
+      properties:
+        taxAmountToCollect:
+          description: The total tax amount to collect from the customer, in the smallest denomination of the currency (e.g. cents or pennies)
+          type: integer
+          format: int64
+        lineItems:
+          description: The tax amount to collect for each line item. The order is the same as the lineItems property of the request.
+          type: array
+          items:
+            type: object
+            properties:
+              taxAmountToCollect:
+                description: The tax amount to collect for the line item, in the smallest denomination of the currency (e.g. cents or pennies)
+                type: integer
+                format: int64
+    CreateOrUpdateTransactionSuccess:
+      allOf:
+        - $ref: '#/components/schemas/CreateEphemeralTransactionSuccess'
+        - type: object
+          properties:
+            version:
+              description: The transaction version
+              type: integer
+              format: int32
+    CreateTransactionCannotComputeTaxAmount:
+      type: object
+      description: Error computing tax amount to be collected
+      properties:
+        type:
+          type: string
+          enum:
+            - taxDateTooFarInFuture
+            - productExternalIdUnknown
+            - customerAddressCountryNotSupported
+            - customerAddressCouldNotResolve
+            - accountingTimeZoneNotSetForSeller
+            - accountingTimeZoneNotSupported
+            - externalServiceError
+            - customerIdNotFound
+            - taxDateTooFarInPast
+            - currencyCodeNotSupported
+    CreateTransactionCannotUpdate:
+      type: object
+      description: Error updating transaction
+      properties:
+        type:
+          type: string
+          enum:
+            - transactionFrozenForFiling
+  parameters:
+    CertificateId:
+      name: certificateId
+      in: path
+      description: ID of the certificate you want to archive.
+      required: true
+      schema:
+        type: string
+    TransactionId:
+      name: transactionId
+      in: path
+      description: ID of the transaction you want to void.
+      required: true
+      schema:
+        type: string
+    IntegrationId:
+      name: integrationId
+      in: path
+      description: Your unique integration ID.
+      required: true
+      schema:
+        type: string
+  requestBodies:
+    empty:
+      content:
+        application/json:
+          schema:
+            type: object
+          examples:
+            emptyExample:
+              value: {}
+              summary: Empty request body
+      required: true
+  responses:
+    EmptyResponse:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+          example: {}
+    CreateTransactionBadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: string
+          examples:
+            missingRequiredProperty:
+              value: 'Request body: "lineItems": Required.'
+              summary: Missing required property
+            missingCustomerAddress:
+              value: 'Request body: "customerAddress": Invalid input.'
+              summary: Missing "customerAddress"
+            usAddressMissingCountry:
+              value: 'Request body: "customerAddress": Unrecognized key(s) in object: ''state'', ''zipCode''.'
+              summary: A US customer address must include the "country" property.
+            redundantTimeZoneProvided:
+              value: 'Request body: Cannot specify both accountingDate and accountingTimeZone.'
+              summary: If accountingDate is provided then accountingTimeZone must be omitted.
+security:
+  - http: []

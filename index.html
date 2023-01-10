@@ -1,0 +1,13 @@
+<body>
+    <div id="redoc-container"></div>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"> </script>
+    <script>
+        Redoc.init('./dist.yaml', {
+            theme: {
+                rightPanel: {
+                    backgroundColor: '#201A36',
+                },
+            },
+        }, document.getElementById('redoc-container'))
+        </script>
+</body>
