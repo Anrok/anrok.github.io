@@ -7,8 +7,7 @@ info:
     email: support@anrok.com
     url: https://help-center.anrok.com/hc/en-us/requests/new
   license:
-    name: TODO!!
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
+    name: All rights reserved
   x-logo:
     url: https://theme.zdassets.com/theme_assets/10849361/0cd1c7945d3fefa1b197ebdc630b5ea13eb072f8.png
   description: |
@@ -132,7 +131,7 @@ paths:
       description: This endpoint is used to archive/invalidate a customer certificate.
       operationId: certificatesArchive
       requestBody:
-        $ref: '#/components/requestBodies/empty'
+        $ref: '#/components/requestBodies/Empty'
       responses:
         '200':
           $ref: '#/components/responses/EmptyResponse'
@@ -320,60 +319,46 @@ paths:
       tags:
         - Transactions
       summary: Create refund
-      description: Creates a new transaction that is the exact inverse of the given transaction. The sale prices and tax amounts will add up to zero.
+      description: '[Deprecated - use createNegation instead] Creates a new transaction that is the exact inverse of the given transaction. The sale prices and tax amounts will add up to zero.'
       operationId: transactionsCreateRefund
       requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                originalTransactionId:
-                  description: The ID of the transaction you want to create a refund of
-                  type: string
-                newTransactionId:
-                  description: The ID for the new transaction
-                  type: string
-                originalTransactionExpectedVersion:
-                  description: The expected transaction version. The refund will fail if this is not the latest version of the transaction.
-                  type: integer
-                  format: int32
-              required:
-                - originalTransactionId
-                - newTransactionId
-            example:
-              originalTransactionId: stripe:in_1JSW342eZvKYlo2C
-              newTransactionId: stripe:in_1JSW342eZvKYlo2C_refund
-        required: true
+        $ref: '#/components/requestBodies/CreateNegation'
       responses:
         '200':
           $ref: '#/components/responses/EmptyResponse'
         '400':
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                type: string
-              examples:
-                missingRequestProperty:
-                  summary: Required property missing
-                  value: 'Request body: "newTransactionId": Required.'
+          $ref: '#/components/responses/CreateNegationBadRequest'
         '409':
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    type: string
-                    enum:
-                      - transactionIdNotFound
-                      - transactionExpectedVersionMismatch
-                      - transactionIsAlreadyANegation
-                      - duplicateTransactionId
-              example:
-                type: transactionExpectedVersionMismatch
+          $ref: '#/components/responses/CreateNegationConflict'
+      x-code-samples:
+        - lang: cURL
+          source: |-
+            apiToken='sxxx/saxxx/secret.xxx'
+
+            curl -X POST https://api.anrok.com/v1/seller/transactions/createRefund \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $apiToken" \
+              -d '{
+                "originalTransactionId": "stripe:in_1JSW342eZvKYlo2C",
+                "newTransactionId": "stripe:in_1JSW342eZvKYlo2C_refund"
+              }'
+      deprecated: true
+  /v1/seller/transactions/createNegation:
+    post:
+      tags:
+        - Transactions
+      summary: Create negation
+      description: Creates a new transaction that is the exact inverse of the given transaction. The sale prices and tax amounts will add up to zero.
+      operationId: transactionsCreateNegation
+      requestBody:
+        $ref: '#/components/requestBodies/CreateNegation'
+      responses:
+        '200':
+          $ref: '#/components/responses/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/CreateNegationBadRequest'
+        '409':
+          $ref: '#/components/responses/CreateNegationConflict'
       x-code-samples:
         - lang: cURL
           source: |-
@@ -449,7 +434,7 @@ paths:
       description: Lists all Product ID mappings for this integration.
       operationId: productIdMappingsList
       requestBody:
-        $ref: '#/components/requestBodies/empty'
+        $ref: '#/components/requestBodies/Empty'
       responses:
         '200':
           description: OK
@@ -541,6 +526,16 @@ components:
       description: The Anrok API uses API keys to authenticate requests. You can view and manage your API keys in the Anrok app under Settings >> Developers >> Manage API keys. Use an Authorization header in the format `Bearer {sellerId}/{apiKeyId}/secret.{apiSecret}` to authenticate Anrok API requests.
       scheme: Bearer
   schemas:
+    CustomerId:
+      description: |
+        The Anrok customer ID used to link transactions for the same customer and to look up tax exemption certificates for a customer. This is typically the billing system's customer ID with a prefix to disambiguate.
+        - If customerId is provided without customerName, that customer object must already exist in Anrok.
+        - If both customerId and customerName are provided, the customer object will be created if it is not already present.
+        - Customer IDs are unique across the entire seller account.
+      type: string
+      examples:
+        - v1:1292
+        - stripe:cus_K39sWBu92Lo
     CustomerName:
       description: The name of the customer
       type: string
@@ -592,16 +587,13 @@ components:
       type: object
       properties:
         customerId:
-          description: The Anrok ID of the customer
-          type: string
-          examples:
-            - cus_123
+          $ref: '#/components/schemas/CustomerId'
         customerName:
           $ref: '#/components/schemas/CustomerName'
         effectiveDateBegin:
           description: Effective date of certificate
           type: string
-          format: date-time
+          format: date
           examples:
             - '2022-01-01'
         exemptionNumber:
@@ -752,15 +744,7 @@ components:
             - $ref: '#/components/schemas/CustomerNonUsAddress'
             - $ref: '#/components/schemas/CustomerUsAddress'
         customerId:
-          description: |
-            The Anrok customer ID used to link transactions for the same customer and to look up tax exemption certificates for a customer. This is typically the billing system's customer ID with a prefix to disambiguate.
-            - If customerId is provided without customerName, that customer object must already exist in Anrok.
-            - If both customerId and customerName are provided, the customer object will be created if it is not already present.
-            - Customer IDs are unique across the entire seller account.
-          type: string
-          examples:
-            - v1:1292
-            - stripe:cus_K39sWBu92Lo
+          $ref: '#/components/schemas/CustomerId'
         customerName:
           $ref: '#/components/schemas/CustomerName'
         customerTaxIds:
@@ -884,7 +868,7 @@ components:
       schema:
         type: string
   requestBodies:
-    empty:
+    Empty:
       content:
         application/json:
           schema:
@@ -893,6 +877,29 @@ components:
             emptyExample:
               value: {}
               summary: Empty request body
+      required: true
+    CreateNegation:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              originalTransactionId:
+                description: The ID of the transaction you want to create a refund of
+                type: string
+              newTransactionId:
+                description: The ID for the new transaction
+                type: string
+              originalTransactionExpectedVersion:
+                description: The expected transaction version. The refund will fail if this is not the latest version of the transaction.
+                type: integer
+                format: int32
+            required:
+              - originalTransactionId
+              - newTransactionId
+          example:
+            originalTransactionId: stripe:in_1JSW342eZvKYlo2C
+            newTransactionId: stripe:in_1JSW342eZvKYlo2C_refund
       required: true
   responses:
     EmptyResponse:
@@ -921,5 +928,31 @@ components:
             redundantTimeZoneProvided:
               value: 'Request body: Cannot specify both accountingDate and accountingTimeZone.'
               summary: If accountingDate is provided then accountingTimeZone must be omitted.
+    CreateNegationBadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: string
+          examples:
+            missingRequestProperty:
+              summary: Required property missing
+              value: 'Request body: "newTransactionId": Required.'
+    CreateNegationConflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              type:
+                type: string
+                enum:
+                  - transactionIdNotFound
+                  - transactionExpectedVersionMismatch
+                  - transactionIsAlreadyANegation
+                  - duplicateTransactionId
+          example:
+            type: transactionExpectedVersionMismatch
 security:
   - http: []
