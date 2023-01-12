@@ -35,12 +35,6 @@ tags:
     description: Distinct from Anrok's Transaction API, these endpoints enable you to manage your Product IDs in Anrok via API. You may use these endpoints to supplement your core integration, whether that's through our Transaction API or one of our partner integrations. This API is designed to support you in dynamically mapping new Products and viewing a comprehensive list of existing mappings. Because we aim to keep your product list in Anrok minimal and focused on truly distinct offerings, we use mappings to associate various products in your billing system with the equivalent products in Anrok. This API enables you to confirm that each product on any transaction seen by Anrok is mapped to a defined product and will be assessed properly for taxability calculations as a result.
 servers:
   - url: https://api.anrok.com
-  - url: https://{tenant}/api/v1
-    variables:
-      tenant:
-        default: www
-        description: Your tenant id
-  - url: https://example.com/api/v1
 paths:
   /v1/seller/certificates/create:
     post:
@@ -213,9 +207,9 @@ paths:
                   - $ref: '#/components/schemas/CreateTransactionCannotUpdate'
               examples:
                 taxDateTooFarInFuture:
-                  value:
-                    type: taxDateTooFarInFuture
-                  summary: Since tax rates are subject to change, we don't allow future tax dates.
+                  $ref: '#/components/examples/ConflictTaxDateTooFarInFuture'
+                accoutingTimeZoneNotSetForSeller:
+                  $ref: '#/components/examples/ConflictAccountingTimeZoneNotSetForSeller'
       x-code-samples:
         - lang: cURL
           source: |-
@@ -289,6 +283,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateTransactionCannotComputeTaxAmount'
+              examples:
+                taxDateTooFarInFuture:
+                  $ref: '#/components/examples/ConflictTaxDateTooFarInFuture'
+                accoutingTimeZoneNotSetForSeller:
+                  $ref: '#/components/examples/ConflictAccountingTimeZoneNotSetForSeller'
       x-codeSamples:
         - lang: cURL
           source: |-
@@ -523,7 +522,7 @@ components:
   securitySchemes:
     http:
       type: http
-      description: The Anrok API uses API keys to authenticate requests. You can view and manage your API keys in the Anrok app under Settings >> Developers >> Manage API keys. Use an Authorization header in the format `Bearer {sellerId}/{apiKeyId}/secret.{apiSecret}` to authenticate Anrok API requests.
+      description: The Anrok API uses API keys to authenticate requests. You can view and manage your API keys in [Anrok](https://app.anrok.com/-/api-keys). Use an Authorization header in the format `Bearer {sellerId}/{apiKeyId}/secret.{apiKeySecret}` to authenticate Anrok API requests.
       scheme: Bearer
   schemas:
     CustomerId:
@@ -781,6 +780,7 @@ components:
       required:
         - lineItems
         - currencyCode
+        - customerAddress
     CreateOrUpdateTransaction:
       allOf:
         - $ref: '#/components/schemas/CreateEphemeralTransaction'
@@ -928,6 +928,9 @@ components:
             redundantTimeZoneProvided:
               value: 'Request body: Cannot specify both accountingDate and accountingTimeZone.'
               summary: If accountingDate is provided then accountingTimeZone must be omitted.
+            missingAccountingDate:
+              value: 'Request body: Must specify either accountingDate or accountingTimeZone.'
+              summary: Not enough info to determine accounting date
     CreateNegationBadRequest:
       description: Bad Request
       content:
@@ -954,5 +957,14 @@ components:
                   - duplicateTransactionId
           example:
             type: transactionExpectedVersionMismatch
+  examples:
+    ConflictTaxDateTooFarInFuture:
+      value:
+        type: taxDateTooFarInFuture
+      summary: Since tax rates are subject to change, we don't allow future tax dates.
+    ConflictAccountingTimeZoneNotSetForSeller:
+      value:
+        type: accountingTimeZoneNotSetForSeller
+      summary: Cannot determine accounting date from accountingTime without time zone
 security:
   - http: []
