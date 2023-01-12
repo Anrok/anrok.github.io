@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  version: 1.0.0
   title: Anrok API
   termsOfService: https://www.anrok.com/privacy-terms
   contact:
@@ -9,7 +8,7 @@ info:
   license:
     name: All rights reserved
   x-logo:
-    url: https://theme.zdassets.com/theme_assets/10849361/0cd1c7945d3fefa1b197ebdc630b5ea13eb072f8.png
+    url: https://global-uploads.webflow.com/632add85afcd1ac30aa74675/6357842d130e1f3e0e23d1fe_anrok_logo.svg
   description: |
     # API reference
 
