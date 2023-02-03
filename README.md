@@ -3,5 +3,6 @@ Then OpenAPI Specification is given by `dist.yaml`. Build the static HTML from t
 ```
 redoc-cli build dist.yaml -o index.html \
 --options.theme.rightPanel.backgroundColor=#201A36 \
---options.theme.logo.gutter=20px 
+--options.theme.logo.gutter=20px \
+-t template.hbs
 ```
