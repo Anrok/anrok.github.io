@@ -695,7 +695,7 @@ components:
         zipCode: '10601'
     CustomerTaxId:
       type: object
-      description: VAT registration number for a European Union member state
+      description: The VAT registration number(s) of the customer for a non-US country.
       properties:
         type:
           type: string
@@ -704,7 +704,7 @@ components:
             - euVrn
           description: This setting is purely metadata and does not affect tax calculation.
         value:
-          description: VAT registration number for any non-US country
+          description: The customer VAT registration number for a non-US country.
           type: string
       required:
         - type
