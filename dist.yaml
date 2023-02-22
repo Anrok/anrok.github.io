@@ -695,7 +695,7 @@ components:
         zipCode: '10601'
     CustomerTaxId:
       type: object
-      description: The VAT registration number(s) of the customer for a non-US country.
+      description: The customer VAT registration number for a non-US country.
       properties:
         type:
           type: string
@@ -733,7 +733,7 @@ components:
         customerName:
           $ref: '#/components/schemas/CustomerName'
         customerTaxIds:
-          description: Tax IDs for the customer receiving the product
+          description: Tax IDs for the customer receiving the product.
           type: array
           items:
             $ref: '#/components/schemas/CustomerTaxId'
