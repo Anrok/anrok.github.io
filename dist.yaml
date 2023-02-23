@@ -694,33 +694,21 @@ components:
         state: NY
         zipCode: '10601'
     CustomerTaxId:
-      oneOf:
-        - type: object
-          description: VAT registration number for a European Union member state
-          properties:
-            type:
-              type: string
-              enum:
-                - euVrn
-            value:
-              description: VAT registration number for EU member state
-              type: string
-          required:
-            - type
-            - value
-        - type: object
-          description: Customer tax ID for any non-US, non-EU country
-          properties:
-            type:
-              type: string
-              enum:
-                - genericVatNumber
-            value:
-              description: Tax identification number
-              type: string
-          required:
-            - type
-            - value
+      type: object
+      description: The customer VAT registration number for a non-US country
+      properties:
+        type:
+          type: string
+          enum:
+            - genericVatNumber
+            - euVrn
+          description: This setting is purely metadata and does not affect tax calculation.
+        value:
+          description: The customer VAT registration number for a non-US country
+          type: string
+      required:
+        - type
+        - value
     CreateEphemeralTransaction:
       type: object
       properties:
